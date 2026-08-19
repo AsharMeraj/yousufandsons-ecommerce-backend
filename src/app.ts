@@ -7,8 +7,21 @@ import ordersRouter from './routes/orders';
 import uploadRouter from './routes/upload';
 
 const app = express();
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
-app.use(express.json());
+
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://yousufandsons.vercel.app',
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+}));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
