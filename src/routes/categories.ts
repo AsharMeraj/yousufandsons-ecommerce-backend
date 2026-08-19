@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { categories } from '../db/schema';
+import { categories, products } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { requireAdmin } from '../middleware/requireAdmin';
 import { validate } from '../middleware/validate';
@@ -42,16 +42,26 @@ router.patch('/:id', requireAdmin, validate(updateCategorySchema), async (req, r
   }
 });
 
-// DELETE /categories/:id - admin only, soft delete
+// DELETE /categories/:id - admin only, soft delete + unlink products
 router.delete('/:id', requireAdmin, async (req, res) => {
   try {
+    const categoryId = req.params.id as string;
+
     const [deleted] = await db
       .update(categories)
       .set({ isActive: false })
-      .where(eq(categories.id, req.params.id as string))
+      .where(eq(categories.id, categoryId))
       .returning();
+
     if (!deleted) return res.status(404).json({ error: 'Category not found' });
-    res.json({ message: 'Category deactivated', category: deleted });
+
+    // Unlink all products from this category so they don't reference a hidden/inactive category
+    await db
+      .update(products)
+      .set({ categoryId: null })
+      .where(eq(products.categoryId, categoryId));
+
+    res.json({ message: 'Category deactivated and products unlinked', category: deleted });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete category' });
