@@ -25,13 +25,15 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
+app.use(express.json()); // <-- THIS WAS MISSING
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
 app.use('/products', productsRouter);
 app.use('/categories', categoriesRouter);
-app.use('/orders', ordersRouter)
+app.use('/orders', ordersRouter);
 app.use('/upload', uploadRouter);
 
 export default app;
