@@ -121,13 +121,55 @@ router.get('/', requireAdmin, async (_req, res) => {
 // PATCH /orders/:id - admin only, update status
 router.patch('/:id', requireAdmin, validate(updateOrderStatusSchema), async (req, res) => {
   const { status } = req.body;
-  const [updated] = await db
-    .update(orders)
-    .set({ status })
-    .where(eq(orders.id, req.params.id as string))
-    .returning();
-  if (!updated) return res.status(404).json({ error: 'Order not found' });
-  res.json(updated);
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [existingOrder] = await tx
+        .select()
+        .from(orders)
+        .where(eq(orders.id, req.params.id as string));
+
+      if (!existingOrder) {
+        throw new Error('Order not found');
+      }
+
+      const wasAlreadyCancelled = existingOrder.status === 'cancelled';
+      const isBeingCancelled = status === 'cancelled' && !wasAlreadyCancelled;
+
+      const [updated] = await tx
+        .update(orders)
+        .set({ status })
+        .where(eq(orders.id, req.params.id as string))
+        .returning();
+
+      // Restore stock only when transitioning INTO cancelled (not if already cancelled)
+      if (isBeingCancelled) {
+        const items = await tx
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, existingOrder.id));
+
+        for (const item of items) {
+          if (item.productId) {
+            await tx
+              .update(products)
+              .set({ stock: sql`${products.stock} + ${item.quantity}` })
+              .where(eq(products.id, item.productId));
+          }
+        }
+      }
+
+      return updated;
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error(err);
+    if (err.message === 'Order not found') {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    res.status(500).json({ error: 'Failed to update order' });
+  }
 });
 
 export default router;
